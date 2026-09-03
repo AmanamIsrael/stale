@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stale</title>
+    <link rel="stylesheet" href="./src/popup.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <div class="brand">
+          <svg viewBox="0 0 128 128" width="20" height="20" aria-hidden="true">
+            <defs>
+              <linearGradient id="icon-g" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#40434a" />
+                <stop offset="1" stop-color="#17181c" />
+              </linearGradient>
+            </defs>
+            <rect width="128" height="128" rx="28" fill="url(#icon-g)" />
+            <g stroke="#ffffff" stroke-linecap="round" fill="none">
+              <circle cx="64" cy="74" r="32" stroke-width="8" />
+              <line x1="64" y1="27" x2="64" y2="41" stroke-width="8" />
+              <line x1="42" y1="52" x2="36" y2="46" stroke-width="6" />
+              <line x1="64" y1="74" x2="64" y2="52" stroke-width="7" />
+            </g>
+            <line x1="64" y1="74" x2="84" y2="94" stroke="#6f9bff" stroke-width="4.5" stroke-linecap="round" />
+            <circle cx="64" cy="74" r="4.5" fill="#6f9bff" />
+          </svg>
+          <h1>Stale</h1>
+        </div>
+        <button id="pause" type="button" aria-pressed="false">Pause</button>
+      </header>
+
+      <section aria-label="Cadence">
+        <div id="presets" role="radiogroup" aria-label="Close tabs after"></div>
+      </section>
+
+      <section aria-label="Corral">
+        <h2>
+          Corral <span id="today" class="muted"></span>
+          <button id="clear" type="button" class="ghost">Clear</button>
+        </h2>
+        <div class="list-wrap">
+          <ul id="corral" role="list"></ul>
+          <p id="empty" class="muted" hidden>
+            Nothing closed yet. Tabs past the cadence land here.
+          </p>
+          <button id="more" type="button" class="more" hidden>Load more</button>
+        </div>
+      </section>
+
+      <p id="error" role="alert" class="error" hidden></p>
+    </main>
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>

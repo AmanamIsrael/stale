@@ -1,0 +1,19 @@
+{
+  "name": "stale",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "smoke": "bun run scripts/smoke.ts",
+    "icons": "bun run scripts/make-icons.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.8",
+    "bun-types": "1.4.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}
