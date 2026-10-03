@@ -1,11 +1,10 @@
 import {
   PRESETS,
-  clearCorral,
   getClosedToday,
   getCorral,
   getSettings,
+  mutate,
   removeFromCorral,
-  saveSettings,
   type CorralEntry,
 } from "./shared";
 
@@ -43,18 +42,6 @@ function domainOf(url: string): string {
     return new URL(url).hostname;
   } catch {
     return "";
-  }
-}
-
-// chrome.tabs.create silently resolves garbage URLs against the extension
-// origin, so garbage must be caught here rather than left to the API.
-function isRestorableUrl(url: string): boolean {
-  try {
-    return ["http:", "https:", "file:", "chrome:", "chrome-extension:"].includes(
-      new URL(url).protocol,
-    );
-  } catch {
-    return false;
   }
 }
 
@@ -104,6 +91,24 @@ function showError(message: string): void {
   hideErrorTimer = setTimeout(() => (errorEl.hidden = true), 4000);
 }
 
+async function runAction(
+  control: HTMLButtonElement | HTMLInputElement,
+  action: () => Promise<void>,
+): Promise<void> {
+  if (control.disabled) return;
+  control.disabled = true;
+  control.setAttribute("aria-busy", "true");
+  try {
+    await action();
+  } catch (error) {
+    showError(error instanceof Error ? error.message : "The operation failed. Try again.");
+    await refreshSafely();
+  } finally {
+    control.disabled = false;
+    control.removeAttribute("aria-busy");
+  }
+}
+
 function renderPresets(cadenceMinutes: number): void {
   presetsEl.replaceChildren(
     ...PRESETS.map((p) => {
@@ -115,8 +120,8 @@ function renderPresets(cadenceMinutes: number): void {
       input.value = String(p.minutes);
       input.checked = p.minutes === cadenceMinutes;
       input.addEventListener("change", () => {
-        void getSettings().then((s) =>
-          saveSettings({ ...s, cadenceMinutes: p.minutes }),
+        void runAction(input, () =>
+          mutate({ kind: "set-cadence", minutes: p.minutes }),
         );
       });
       const span = document.createElement("span");
@@ -139,24 +144,12 @@ function renderRow(entry: CorralEntry): HTMLLIElement {
   link.title = entry.url ? `${entry.title}\n${entry.url}` : entry.title;
   link.setAttribute("aria-label", `Restore ${entry.title || entry.url}`);
   link.addEventListener("click", () => {
-    if (!entry.url || !isRestorableUrl(entry.url)) {
-      showError("This entry has no restorable URL.");
-      return;
-    }
-    link.disabled = true;
-    link.setAttribute("aria-busy", "true");
-    chrome.tabs.create({ url: entry.url }).then(
-      async () => {
-        // Remove before closing; closing first can abort the storage write.
-        await removeFromCorral(entry.id);
-        window.close();
-      },
-      () => {
-        link.disabled = false;
-        link.removeAttribute("aria-busy");
-        showError("Chrome refused to open this URL.");
-      },
-    );
+    void runAction(link, async () => {
+      // The worker owns tab creation and cleanup even if activation dismisses
+      // this popup before the response arrives.
+      await mutate({ kind: "restore", id: entry.id });
+      window.close();
+    });
   });
 
   const whenEl = document.createElement("span");
@@ -170,7 +163,7 @@ function renderRow(entry: CorralEntry): HTMLLIElement {
   remove.textContent = "×";
   remove.setAttribute("aria-label", `Remove ${entry.title || entry.url}`);
   remove.addEventListener("click", () => {
-    void removeFromCorral(entry.id);
+    void runAction(remove, () => removeFromCorral(entry.id));
   });
 
   li.append(link, whenEl, remove);
@@ -202,8 +195,16 @@ async function refresh(): Promise<void> {
   todayEl.textContent = closedToday > 0 ? `${closedToday} closed today` : "";
 }
 
+async function refreshSafely(): Promise<void> {
+  try {
+    await refresh();
+  } catch {
+    showError("Could not load Stale. Close the popup and try again.");
+  }
+}
+
 pauseEl.addEventListener("click", () => {
-  void getSettings().then((s) => saveSettings({ ...s, paused: !s.paused }));
+  void runAction(pauseEl, () => mutate({ kind: "toggle-pause" }));
 });
 
 function disarmClear(): void {
@@ -216,7 +217,7 @@ function disarmClear(): void {
 clearEl.addEventListener("click", () => {
   if (clearEl.classList.contains("armed")) {
     disarmClear();
-    void clearCorral();
+    void runAction(clearEl, () => mutate({ kind: "clear" }));
     return;
   }
   clearEl.classList.add("armed");
@@ -227,11 +228,13 @@ clearEl.addEventListener("click", () => {
 
 moreEl.addEventListener("click", () => {
   visibleCount += PAGE_SIZE;
-  void refresh();
+  void refreshSafely();
 });
 
-chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area === "sync" || area === "local") void refresh();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if ((area === "sync" && changes.settings) || (area === "local" && (changes.corral || changes.closedToday))) {
+    void refreshSafely();
+  }
 });
 
-void refresh();
+void refreshSafely();

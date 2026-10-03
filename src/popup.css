@@ -258,7 +258,7 @@ button.ghost:hover {
   text-align: center;
 }
 
-.more {
+.more:not([hidden]) {
   display: block;
   width: 100%;
   margin-top: 6px;

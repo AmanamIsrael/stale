@@ -6,9 +6,15 @@ Testing archaeology and gotchas. The public README stays lean; this is for anyon
 
 A 15-minute `chrome.alarms` sweep wakes the MV3 service worker (which is otherwise dead ~99% of the time). Staleness is `Date.now() - tab.lastAccessed > cadence`, and only focusing a tab resets the clock. The cadence preset lives in `chrome.storage.sync`.
 
-Closed tabs go to the corral (`chrome.storage.local`, capped at 300) with favicon, title, and URL, then get closed via `chrome.tabs.remove`. Each tab is closed individually, so a tab that dies mid-sweep doesn't corrupt the corral.
+The worker saves recovery copies in `chrome.storage.local` before calling `chrome.tabs.remove`. Each candidate's current eligibility and URL are checked again after saving. Successful closures and their daily count are committed together; failed or skipped closures are removed from the corral. The completed corral keeps the 300 most recent entries. Recovery copies temporarily exceed that cap so every candidate is backed up before closing.
 
-Restore validates the URL scheme before calling `chrome.tabs.create`, because Chrome silently resolves garbage URLs against the extension origin and a restore that fails would leave the entry stuck in the corral.
+If the worker stops or the final storage write fails, recovery copies remain available. Some may refer to tabs that are still open, and the daily counter may omit closures from the interrupted sweep. This favors keeping a recoverable URL over deleting an uncertain entry.
+
+The popup sends mutations to the worker. A Web Lock serializes corral changes and sweeps, preventing concurrent read→modify→write operations from overwriting entries. Settings use a separate lock so pausing can take effect during a sweep. Persistent data lives in Chrome storage; locks are released automatically if the worker stops.
+
+The worker validates the URL scheme before calling `chrome.tabs.create`, because Chrome silently resolves relative URLs against the extension origin. It removes the corral entry only after creation succeeds, and owns that cleanup even if opening the tab dismisses the popup. Failed operations are reported in the popup.
+
+`bun run test` runs deterministic failure and concurrency regressions with Node 24's real Web Locks implementation and a Chrome API fixture. `bun run smoke` checks the built extension against actual Chrome. Add `--headed --keep-open` to leave a separate test profile open with the ordinary 24-hour cadence and a populated corral.
 
 ## Things we had to test to believe
 
@@ -28,7 +34,7 @@ Two open questions from the design phase, both checked on a throwaway Chrome 152
 - [ ] Preset selection survives a browser restart
 - [ ] A tab left unfocused past the cadence closes and appears in the corral
 - [ ] Clicking a corral row reopens the URL
-- [ ] Pinned tab, active tab, and the final tab of the final window are never closed
+- [ ] Pinned, active, audible, and navigating tabs, and the final tab of the final window are never closed
 - [ ] Pause stops all closing; resume picks it back up
 - [ ] Badge count appears after a sweep and resets the next day
 - [ ] Corral paginates: 10 visible, Load more reveals the rest

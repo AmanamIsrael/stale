@@ -7,6 +7,7 @@
     "build": "vite build",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/archive.test.ts",
     "smoke": "bun run scripts/smoke.ts",
     "icons": "bun run scripts/make-icons.ts"
   },
