@@ -32,57 +32,76 @@ export const DEFAULT_SETTINGS: Settings = {
   paused: false,
 };
 
-async function storageGet<T>(key: string): Promise<T | undefined> {
-  const result = await chrome.storage.local.get(key);
-  return result[key] as T | undefined;
-}
-
-async function storageGetSync<T>(key: string): Promise<T | undefined> {
-  const result = await chrome.storage.sync.get(key);
-  return result[key] as T | undefined;
-}
-
 export async function getSettings(): Promise<Settings> {
-  const settings = await storageGetSync<Partial<Settings>>("settings");
+  const { settings } = await chrome.storage.sync.get<{
+    settings?: Partial<Settings>;
+  }>("settings");
   return { ...DEFAULT_SETTINGS, ...settings };
 }
 
-export async function saveSettings(settings: Settings): Promise<void> {
-  await chrome.storage.sync.set({ settings });
+export type Mutation =
+  | { kind: "set-cadence"; minutes: number }
+  | { kind: "toggle-pause" }
+  | { kind: "remove"; id: string }
+  | { kind: "restore"; id: string }
+  | { kind: "clear" };
+
+export function isMutation(value: unknown): value is Mutation {
+  if (typeof value !== "object" || value === null || !("kind" in value)) return false;
+  switch (value.kind) {
+    case "set-cadence":
+      return "minutes" in value && PRESETS.some((preset) => preset.minutes === value.minutes);
+    case "remove":
+    case "restore":
+      return "id" in value && typeof value.id === "string";
+    case "toggle-pause":
+    case "clear":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export async function mutate(message: Mutation): Promise<void> {
+  const response = await chrome.runtime.sendMessage<Mutation, unknown>(message);
+  if (typeof response !== "object" || response === null || !("ok" in response)) {
+    throw new Error("Stale did not respond. Try again.");
+  }
+  if (response.ok !== true) {
+    throw new Error(
+      "error" in response && typeof response.error === "string"
+        ? response.error
+        : "The operation failed. Try again.",
+    );
+  }
 }
 
 export async function getCorral(): Promise<CorralEntry[]> {
-  return (await storageGet<CorralEntry[]>("corral")) ?? [];
+  const { corral } = await chrome.storage.local.get<{ corral?: CorralEntry[] }>("corral");
+  return corral ?? [];
 }
 
-export async function prependCorral(entries: CorralEntry[]): Promise<CorralEntry[]> {
-  const corral = [...entries, ...(await getCorral())].slice(0, CORRAL_CAP);
-  await chrome.storage.local.set({ corral });
-  return corral;
-}
-
-export async function removeFromCorral(id: string): Promise<CorralEntry[]> {
-  const corral = (await getCorral()).filter((e) => e.id !== id);
-  await chrome.storage.local.set({ corral });
-  return corral;
-}
-
-export async function clearCorral(): Promise<void> {
-  await chrome.storage.local.set({ corral: [] });
-}
-
-export async function bumpClosedToday(n: number): Promise<ClosedToday> {
-  const date = localDateKey();
-  const closedToday = await storageGet<ClosedToday>("closedToday");
-  const current = closedToday?.date === date ? (closedToday.count ?? 0) : 0;
-  const next: ClosedToday = { date, count: current + n };
-  await chrome.storage.local.set({ closedToday: next });
-  return next;
+export async function removeFromCorral(id: string): Promise<void> {
+  await mutate({ kind: "remove", id });
 }
 
 export async function getClosedToday(): Promise<number> {
-  const closedToday = await storageGet<ClosedToday>("closedToday");
+  const { closedToday } = await chrome.storage.local.get<{
+    closedToday?: ClosedToday;
+  }>("closedToday");
   return closedToday?.date === localDateKey() ? (closedToday.count ?? 0) : 0;
+}
+
+// Chrome resolves relative URLs against the extension origin. Only archive and
+// restore schemes that we can reopen as an independent tab.
+export function isRestorableUrl(url: string): boolean {
+  try {
+    return ["http:", "https:", "file:", "chrome:", "chrome-extension:"].includes(
+      new URL(url).protocol,
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function localDateKey(): string {
